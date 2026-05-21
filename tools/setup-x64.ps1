@@ -37,10 +37,12 @@ function Ok($t)      { Write-Host "  OK: $t" -ForegroundColor Green }
 function Die($t)     { Write-Host "  ERROR: $t" -ForegroundColor Red; exit 1 }
 function Exec($cmd) { Info "> $cmd"; & ([scriptblock]::Create($cmd)); if ($LASTEXITCODE -ne 0) { Die "command failed (exit $LASTEXITCODE): $cmd" } }
 
-# Pinned, >=7-day-old, mutually compatible versions (supply-chain rule).
-$PIP_OPTIMUM      = 'optimum[onnxruntime]==1.24.0'
-$PIP_TRANSFORMERS = 'transformers==4.46.3'
-$PIP_TORCH        = 'torch==2.5.1'
+# torch pinned to an available, not-newest wheel (2.5.1 was dropped for py3.11 on the
+# runner; pip offered 2.9.0..2.12.0). optimum/transformers left unpinned so pip resolves
+# a combo compatible with torch 2.9.x (the export CLI is stable across these).
+$PIP_OPTIMUM      = 'optimum[onnxruntime]'
+$PIP_TRANSFORMERS = 'transformers'
+$PIP_TORCH        = 'torch==2.9.1'
 $MODEL_ID         = 'Babelscape/wikineural-multilingual-ner'
 $MODEL_REL        = 'models/Babelscape/wikineural-multilingual-ner'
 $LIBVIPS_URL      = 'https://github.com/lovell/sharp-libvips/releases/download/v8.14.5/libvips-8.14.5-win32-x64.tar.gz'
