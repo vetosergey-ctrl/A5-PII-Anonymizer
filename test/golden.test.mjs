@@ -23,6 +23,7 @@ test('Russian document: PII hidden, surrounding text intact, reversible', async 
   const { text: out, mapping } = await anon.anonymize(TEXT);
   assert.ok(!out.includes('Иван Петров'), 'name removed');
   assert.ok(!out.includes('ivan.petrov@example.ru'), 'email removed');
+  assert.ok(!out.includes('ул. Тверская'), 'street address removed');
   assert.ok(out.includes('NAME_1') && out.includes('EMAIL_1'));
   assert.ok(out.includes('длинная строка на русском языке'), 'body text intact');
   assert.ok(out.length > TEXT.length * 0.6, 'no catastrophic shrink');

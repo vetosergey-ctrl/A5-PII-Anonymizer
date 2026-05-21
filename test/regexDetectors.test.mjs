@@ -27,3 +27,13 @@ test('offsets are exact', () => {
   const text = 'ИНН 7830002293 и почта a@b.com';
   for (const s of detectStructured(text)) assert.equal(text.slice(s.start, s.end), s.text);
 });
+test('street-only address (no city prefix)', () => {
+  const s = find('живу по адресу ул. Тверская, д. 7, кв. 5 уже год', 'ADDRESS');
+  assert.ok(s, 'address detected');
+  assert.ok(s.text.includes('ул. Тверская') && s.text.includes('д. 7'));
+  assert.ok(!s.text.includes('уже год'), 'does not over-capture trailing text');
+});
+test('address still has exact offsets', () => {
+  const text = 'ул. Ленина, д. 1';
+  for (const sp of detectStructured(text)) assert.equal(text.slice(sp.start, sp.end), sp.text);
+});
