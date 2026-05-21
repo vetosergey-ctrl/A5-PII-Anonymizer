@@ -10,10 +10,13 @@ export function mergeSpans(spans) {
   const sorted = [...spans].sort((a, b) => a.start - b.start || b.end - a.end);
   const kept = [];
   for (const span of sorted) {
-    let conflict = -1;
-    for (let i = 0; i < kept.length; i++) { if (overlaps(kept[i], span)) { conflict = i; break; } }
-    if (conflict === -1) { kept.push(span); continue; }
-    kept[conflict] = better(kept[conflict], span);
+    const conflicts = [];
+    for (let i = 0; i < kept.length; i++) { if (overlaps(kept[i], span)) conflicts.push(i); }
+    if (conflicts.length === 0) { kept.push(span); continue; }
+    let winner = span;
+    for (const i of conflicts) winner = better(winner, kept[i]);
+    for (let i = conflicts.length - 1; i >= 0; i--) kept.splice(conflicts[i], 1);
+    kept.push(winner);
   }
   return kept.sort((a, b) => a.start - b.start);
 }
