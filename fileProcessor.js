@@ -9,6 +9,7 @@ import { PDFDocument } from 'pdf-lib';
 import { pipeline, env } from '@xenova/transformers';
 import { fileURLToPath } from 'url';
 import { createAnonymizer } from './src/pii/anonymizer.js';
+import { createPseudonymizer } from './src/pii/pseudonymizer.js';
 import { createNerDetector } from './src/pii/detectors/nerDetector.js';
 import { writePdf } from './src/pdfWriter.js';
 
@@ -46,18 +47,30 @@ async function loadNERModel() {
 /**
  * The main anonymization function.
  * Uses the offset-based PII engine (createAnonymizer + createNerDetector).
- * Returns the anonymized string; stashes the reversible mapping for Pro export.
+ * Returns the anonymized string. Uses the per-file shared pseudonymizer so
+ * all cells/paragraphs within one processFile call share consistent numbering
+ * and accumulate into a single mapping.
  */
-let lastMapping = {};
+let sharedPseudonymizer = createPseudonymizer();
+let sharedAnonymizer = null;
+
+/** Reset the per-file shared pseudonymizer (call once at the start of processFile). */
+function resetMapping() {
+  sharedPseudonymizer = createPseudonymizer();
+  sharedAnonymizer = null; // will be re-created lazily on first anonymizeText call
+}
+
+export function getLastMapping() { return sharedPseudonymizer.mapping; }
+
 async function anonymizeText(text) {
-  const pipe = await loadNERModel();
-  const ner = createNerDetector({ runPipeline: (t) => pipe(t) });
-  const anonymizer = createAnonymizer({ ner });
-  const { text: out, mapping } = await anonymizer.anonymize(text);
-  lastMapping = mapping;
+  if (!sharedAnonymizer) {
+    const pipe = await loadNERModel();
+    const ner = createNerDetector({ runPipeline: (t) => pipe(t) });
+    sharedAnonymizer = createAnonymizer({ ner, pseudonymizer: sharedPseudonymizer });
+  }
+  const { text: out } = await sharedAnonymizer.anonymize(text);
   return out;
 }
-export function getLastMapping() { return lastMapping; }
 
 export class FileProcessor {
   static async processFile(filePath, outputPath) {
@@ -68,6 +81,10 @@ export class FileProcessor {
         catch (e) { console.warn('mapping write failed:', e.message); }
       }
     }
+
+    // Reset the per-file shared pseudonymizer so all cells/paragraphs share
+    // consistent numbering and accumulate into one mapping for this file.
+    resetMapping();
 
     return new Promise(async (resolve, reject) => {
       try {
