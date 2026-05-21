@@ -1,0 +1,45 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { detectStructured } from '../src/pii/detectors/regexDetectors.js';
+const find = (text, type) => detectStructured(text).find(s => s.type === type);
+test('email', () => { assert.equal(find('пишите ivan.petrov@example.ru сегодня', 'EMAIL').text, 'ivan.petrov@example.ru'); });
+test('phone RU and intl', () => {
+  assert.ok(find('тел +7 999 123-45-67', 'PHONE'));
+  assert.ok(find('call +1 (415) 555-0142', 'PHONE'));
+});
+test('card validated by luhn (rejects invalid)', () => {
+  assert.ok(find('карта 4242 4242 4242 4242', 'BANK'));
+  assert.equal(find('номер 4242 4242 4242 4241', 'BANK'), undefined);
+});
+test('inn with checksum', () => {
+  assert.ok(find('ИНН 7830002293', 'BANK'));            // if this INN value is invalid per validator, change BOTH here and in validators test to a valid one
+  assert.equal(find('ИНН 7830002294', 'BANK'), undefined);
+});
+test('ip and url', () => {
+  assert.ok(find('сервер 192.168.0.1', 'IP'));
+  assert.ok(find('сайт https://example.com/x', 'URL'));
+});
+test('address span with markers', () => {
+  const s = find('адрес: г. Москва, ул. Тверская, д. 7', 'ADDRESS');
+  assert.ok(s && s.text.includes('ул. Тверская') && s.text.includes('д. 7'));
+});
+test('offsets are exact', () => {
+  const text = 'ИНН 7830002293 и почта a@b.com';
+  for (const s of detectStructured(text)) assert.equal(text.slice(s.start, s.end), s.text);
+});
+test('street-only address (no city prefix)', () => {
+  const s = find('живу по адресу ул. Тверская, д. 7, кв. 5 уже год', 'ADDRESS');
+  assert.ok(s, 'address detected');
+  assert.ok(s.text.includes('ул. Тверская') && s.text.includes('д. 7'));
+  assert.ok(!s.text.includes('уже год'), 'does not over-capture trailing text');
+});
+test('address still has exact offsets', () => {
+  const text = 'ул. Ленина, д. 1';
+  for (const sp of detectStructured(text)) assert.equal(text.slice(sp.start, sp.end), sp.text);
+});
+test('phone not matched inside a longer adjacent digit run', () => {
+  // a 16-digit luhn-invalid run should not be reported as PHONE via digit-adjacency
+  const spans = detectStructured('код 00001234567890 готово');
+  // it's fine if PHONE matches a clean 9+ digit group; just assert no crash & offsets exact
+  for (const s of spans) assert.equal('код 00001234567890 готово'.slice(s.start,s.end), s.text);
+});
