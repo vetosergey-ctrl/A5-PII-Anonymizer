@@ -194,7 +194,8 @@ if (-not $SkipBuild) {
     } else { Ok "libvips DLLs already present" }
 
     Info "building Windows installer (electron-builder)"
-    Exec "npx electron-builder --win"
+    # --publish never: in CI electron-builder otherwise tries to publish and demands GH_TOKEN.
+    Exec "npx electron-builder --win --publish never"
 
     $dist = Join-Path $RepoRoot 'dist'
     $exe = Get-ChildItem $dist -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 1
