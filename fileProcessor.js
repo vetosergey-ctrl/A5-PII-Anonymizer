@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
 import mammoth from 'mammoth';
@@ -8,6 +8,11 @@ import { PDFDocument } from 'pdf-lib';
 
 import { pipeline, env } from '@xenova/transformers';
 import { fileURLToPath } from 'url';
+import { createAnonymizer } from './src/pii/anonymizer.js';
+import { createNerDetector } from './src/pii/detectors/nerDetector.js';
+
+// DEV: force Pro mode (no daily limit, always emit mapping). // TODO: revert before release
+const DEV_FORCE_PRO = true;
 
 // ES module paths
 const __filename = fileURLToPath(import.meta.url);
@@ -24,105 +29,13 @@ const useLLM = true;
 // Pipeline reference
 let nerPipeline = null;
 
-// Pseudonym counters/mappings
-const pseudonymCounters = {};
-const pseudonymMapping = {};
-
-/**
- * Returns a consistent pseudonym for a given entity text + type.
- */
-function getPseudonym(entityText, entityType) {
-  if (pseudonymMapping[entityText]) {
-    return pseudonymMapping[entityText];
-  }
-  if (!pseudonymCounters[entityType]) {
-    pseudonymCounters[entityType] = 1;
-  }
-  const pseudonym = `${entityType}_${pseudonymCounters[entityType]++}`;
-  pseudonymMapping[entityText] = pseudonym;
-  return pseudonym;
-}
-
-/**
- * Aggressively merges consecutive tokens of the same entity type,
- * removing whitespace/punctuation from each token, then concatenating.
- * e.g. “Bay,” + “ona,” + “Wil” + “ber” => “BayonaWilber”
- */
-function aggressiveMergeTokens(predictions) {
-  if (!predictions || predictions.length === 0) return [];
-
-  const merged = [];
-  let current = null;
-
-  for (const pred of predictions) {
-    const type = pred.entity.replace(/^(B-|I-)/, '');
-    // Remove whitespace/punctuation from each token
-    let word = pred.word.replace(/\s+/g, '').replace(/[^\w\s.,'-]/g, '');
-    word = word.trim();
-    if (!word) continue;
-
-    if (!current) {
-      current = { type, text: word };
-    } else if (current.type === type) {
-      // Same entity => unify
-      current.text += word;
-    } else {
-      // Different entity => push old one, start new
-      merged.push(current);
-      current = { type, text: word };
-    }
-  }
-  if (current) {
-    merged.push(current);
-  }
-  return merged;
-}
-
-/**
- * Safely escapes all regex meta-characters in a string.
- */
-function escapeRegexChars(str) {
-  return str.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-}
-
-/**
- * Builds a fuzzy regex (with 'g' + 'i') that matches the merged string ignoring spacing/punctuation.
- */
-function buildFuzzyRegex(mergedString) {
-  // Remove punctuation from mergedString
-  let noPunc = mergedString.replace(/[^\w]/g, '');
-  if (!noPunc) {
-    return null;
-  }
-
-  // Escape special regex chars
-  noPunc = escapeRegexChars(noPunc);
-
-  // Build a pattern that allows any non-alphanumeric between letters
-  let pattern = '';
-  for (const char of noPunc) {
-    pattern += `${char}[^a-zA-Z0-9]*`;
-  }
-  // No trailing slice, to avoid bracket issues.
-
-  if (!pattern) {
-    return null;
-  }
-
-  try {
-    return new RegExp(pattern, 'ig');
-  } catch (err) {
-    console.warn(`Regex build failed for pattern="${pattern}". Error: ${err.message}`);
-    return null;
-  }
-}
-
 /**
  * Loads the PII detection model from local files, if not already loaded.
  */
 async function loadNERModel() {
   if (!nerPipeline) {
     console.log("Loading PII detection model from local files...");
+    // TODO(Phase 9): switch to 'Babelscape/wikineural-multilingual-ner'
     nerPipeline = await pipeline('token-classification', 'protectai/lakshyakh93-deberta_finetuned_pii-onnx');
     console.log("Model loaded.");
   }
@@ -130,46 +43,31 @@ async function loadNERModel() {
 }
 
 /**
- * The main anonymization function. 
- * 1) Runs the pipeline
- * 2) Merges partial tokens
- * 3) Uses a fuzzy global regex to replace each merged token with a pseudonym
+ * The main anonymization function.
+ * Uses the offset-based PII engine (createAnonymizer + createNerDetector).
+ * Returns the anonymized string; stashes the reversible mapping for Pro export.
  */
+let lastMapping = {};
 async function anonymizeText(text) {
-  let processedText = String(text);
-
-  const ner = await loadNERModel();
-  console.log("Internal LLM processing...");
-  const predictions = await ner(processedText);
-  console.log("Raw predicted tokens:", predictions);
-
-  const merged = aggressiveMergeTokens(predictions);
-  console.log("Aggressively merged tokens:", merged);
-
-  for (const obj of merged) {
-    const entityType = obj.type;
-    const mergedString = obj.text;
-    if (!mergedString) continue;
-
-    const pseudonym = getPseudonym(mergedString, entityType);
-    const fuzzyRegex = buildFuzzyRegex(mergedString);
-    if (!fuzzyRegex) {
-      console.log(`Skipping zero-length or invalid pattern for mergedString="${mergedString}"`);
-      continue;
-    }
-
-    console.log(`Replacing fuzzy match of "${mergedString}" => regex ${fuzzyRegex} with "${pseudonym}"`);
-
-    // Single-pass global replace
-    processedText = processedText.replace(fuzzyRegex, pseudonym);
-  }
-
-  console.log("LLM processing complete.");
-  return processedText;
+  const pipe = await loadNERModel();
+  const ner = createNerDetector({ runPipeline: (t) => pipe(t) });
+  const anonymizer = createAnonymizer({ ner });
+  const { text: out, mapping } = await anonymizer.anonymize(text);
+  lastMapping = mapping;
+  return out;
 }
+export function getLastMapping() { return lastMapping; }
 
 export class FileProcessor {
   static async processFile(filePath, outputPath) {
+    // Helper: write the reversible mapping JSON when Pro mode is active.
+    function writeMapping(outPath) {
+      if (DEV_FORCE_PRO) {
+        try { fs.writeFileSync(outPath + '.mapping.json', JSON.stringify(getLastMapping(), null, 2), 'utf8'); }
+        catch (e) { console.warn('mapping write failed:', e.message); }
+      }
+    }
+
     return new Promise(async (resolve, reject) => {
       try {
         const ext = path.extname(filePath).toLowerCase();
@@ -190,6 +88,7 @@ export class FileProcessor {
           }
           fs.writeFileSync(outputPath, newContent, 'utf8');
           console.log(`Text file processed and saved to: ${outputPath}`);
+          writeMapping(outputPath);
           resolve(true);
 
         } else if (ext === '.xlsx') {
@@ -213,6 +112,7 @@ export class FileProcessor {
 
           await workbook.xlsx.writeFile(outputPath);
           console.log(`Excel file processed and saved to: ${outputPath}`);
+          writeMapping(outputPath);
           resolve(true);
 
         } else if (ext === '.docx') {
@@ -237,6 +137,7 @@ export class FileProcessor {
           const buffer = await Packer.toBuffer(doc);
           fs.writeFileSync(outputPath, buffer);
           console.log(`DOCX file processed and saved to: ${outputPath}`);
+          writeMapping(outputPath);
           resolve(true);
 
         } else if (ext === '.pdf') {
@@ -259,6 +160,7 @@ export class FileProcessor {
           const pdfBytes = await doc.save();
           fs.writeFileSync(outputPath, pdfBytes);
           console.log(`PDF file processed and saved to: ${outputPath}`);
+          writeMapping(outputPath);
           resolve(true);
 
         } else {
