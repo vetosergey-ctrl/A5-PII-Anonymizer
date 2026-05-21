@@ -109,7 +109,17 @@ if (-not $SkipExport) {
   }
 
   Info "quantizing to int8 -> onnx/model_quantized.onnx"
-  Exec "& `"$optimum`" onnxruntime quantize --avx2 --onnx_model `"$onnxDir`" -o `"$onnxDir`""
+  # optimum requires the output dir to differ from the input dir; quantize into a temp dir then move back.
+  $qOut = Join-Path $finalDir 'onnx_q'
+  if (Test-Path $qOut) { Remove-Item -Recurse -Force $qOut }
+  New-Item -ItemType Directory -Force $qOut | Out-Null
+  Exec "& `"$optimum`" onnxruntime quantize --avx2 --onnx_model `"$onnxDir`" -o `"$qOut`""
+  $q = Get-ChildItem $qOut -Recurse -Filter 'model_quantized.onnx' | Select-Object -First 1
+  if (-not $q) { $q = Get-ChildItem $qOut -Recurse -Filter '*.onnx' | Select-Object -First 1 }
+  if (-not $q) { Die "quantization produced no onnx file in $qOut" }
+  Copy-Item $q.FullName (Join-Path $onnxDir 'model_quantized.onnx') -Force
+  Get-ChildItem $qOut -Filter '*.onnx_data' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName (Join-Path $onnxDir $_.Name) -Force }
+  Remove-Item -Recurse -Force $qOut -ErrorAction SilentlyContinue
 
   if (-not (Test-Path (Join-Path $onnxDir 'model_quantized.onnx'))) { Die "quantization did not produce model_quantized.onnx" }
   if (-not $KeepFp32) {
