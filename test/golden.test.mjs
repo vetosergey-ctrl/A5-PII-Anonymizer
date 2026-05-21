@@ -28,6 +28,6 @@ test('Russian document: PII hidden, surrounding text intact, reversible', async 
   assert.ok(out.includes('длинная строка на русском языке'), 'body text intact');
   assert.ok(out.length > TEXT.length * 0.6, 'no catastrophic shrink');
   let restored = out;
-  for (const [pseudo, orig] of Object.entries(mapping)) restored = restored.split(pseudo).join(orig);
+  for (const [pseudo, orig] of Object.entries(mapping).sort((a,b)=>b[0].length-a[0].length)) restored = restored.split(pseudo).join(orig);
   assert.ok(restored.includes('ivan.petrov@example.ru'));
 });

@@ -4,7 +4,7 @@ const RULES = [
   { type: 'EMAIL', re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
   { type: 'URL', re: /https?:\/\/[^\s<>"')]+/g },
   { type: 'IP', re: /\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b/g },
-  { type: 'PHONE', re: /(?:\+?\d[\d().\-\s]{7,}\d)/g, validate: (m) => m[0].replace(/\D/g, '').length >= 9 },
+  { type: 'PHONE', re: /(?<!\d)(?:\+?\d[\d().\-\s]{7,}\d)/g, validate: (m) => m[0].replace(/\D/g, '').length >= 9 },
   { type: 'BANK', re: /\b(?:\d[ -]?){13,19}\b/g, validate: (m) => luhn(m[0]) },
   { type: 'BANK', re: /ИНН[:\s]*(\d{10}|\d{12})(?!\d)/gi, validate: (m) => innValid(m[1]) },
   { type: 'BANK', re: /СНИЛС[:\s]*([\d \-]{11,14})(?!\d)/gi, validate: (m) => snilsValid(m[1]) },

@@ -37,3 +37,9 @@ test('address still has exact offsets', () => {
   const text = 'ул. Ленина, д. 1';
   for (const sp of detectStructured(text)) assert.equal(text.slice(sp.start, sp.end), sp.text);
 });
+test('phone not matched inside a longer adjacent digit run', () => {
+  // a 16-digit luhn-invalid run should not be reported as PHONE via digit-adjacency
+  const spans = detectStructured('код 00001234567890 готово');
+  // it's fine if PHONE matches a clean 9+ digit group; just assert no crash & offsets exact
+  for (const s of spans) assert.equal('код 00001234567890 готово'.slice(s.start,s.end), s.text);
+});

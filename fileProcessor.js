@@ -1,4 +1,4 @@
-﻿import fs from 'fs';
+import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
 import mammoth from 'mammoth';
@@ -171,9 +171,8 @@ export class FileProcessor {
             anonymizedPdfText = await anonymizeText(pdfText);
           }
 
-          const fontPath = process.resourcesPath
-            ? path.join(process.resourcesPath, 'fonts', 'DejaVuSans.ttf')
-            : path.join(__dirname, 'assets', 'fonts', 'DejaVuSans.ttf');
+          const packagedFont = process.resourcesPath ? path.join(process.resourcesPath, 'fonts', 'DejaVuSans.ttf') : null;
+          const fontPath = (packagedFont && fs.existsSync(packagedFont)) ? packagedFont : path.join(__dirname, 'assets', 'fonts', 'DejaVuSans.ttf');
           await writePdf(PDFDocument, anonymizedPdfText, fontPath, outputPath);
           console.log(`PDF file processed and saved to: ${outputPath}`);
           writeMapping(outputPath);
