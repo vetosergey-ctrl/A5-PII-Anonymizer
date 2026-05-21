@@ -10,6 +10,7 @@ import { pipeline, env } from '@xenova/transformers';
 import { fileURLToPath } from 'url';
 import { createAnonymizer } from './src/pii/anonymizer.js';
 import { createNerDetector } from './src/pii/detectors/nerDetector.js';
+import { writePdf } from './src/pdfWriter.js';
 
 // DEV: force Pro mode (no daily limit, always emit mapping). // TODO: revert before release
 const DEV_FORCE_PRO = true;
@@ -153,12 +154,10 @@ export class FileProcessor {
             anonymizedPdfText = await anonymizeText(pdfText);
           }
 
-          // Create a minimal PDF with pdf-lib
-          const doc = await PDFDocument.create();
-          const page = doc.addPage();
-          page.drawText(anonymizedPdfText, { x: 50, y: 700, size: 12 });
-          const pdfBytes = await doc.save();
-          fs.writeFileSync(outputPath, pdfBytes);
+          const fontPath = process.resourcesPath
+            ? path.join(process.resourcesPath, 'fonts', 'DejaVuSans.ttf')
+            : path.join(__dirname, 'assets', 'fonts', 'DejaVuSans.ttf');
+          await writePdf(PDFDocument, anonymizedPdfText, fontPath, outputPath);
           console.log(`PDF file processed and saved to: ${outputPath}`);
           writeMapping(outputPath);
           resolve(true);

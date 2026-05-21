@@ -21,7 +21,8 @@
     "mammoth": "^1.5.2",
     "docx": "^8.4.0",
     "pdf-parse": "^1.1.1",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "@pdf-lib/fontkit": "1.1.1"
   },
   "devDependencies": {
     "electron": "^34.2.0",
@@ -30,6 +31,8 @@
   "build": {
     "productName": "A5 PII Anonymizer",
     "appId": "com.a5.piiAnonymizer",
+    "asarUnpack": ["node_modules/sharp/**", "node_modules/onnxruntime-node/**", "models/**"],
+    "extraResources": [{ "from": "assets/fonts", "to": "fonts" }],
     "mac": {
       "icon": "assets/icon",
       "category": "public.app-category.utilities"
